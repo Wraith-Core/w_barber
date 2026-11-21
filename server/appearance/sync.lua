@@ -34,55 +34,17 @@ local function playerId(src)
     return math.tointeger(src)
 end
 
-local function barberSkinPatch(app)
-    local patch = { overlays = {} }
-    if type(app.hair) == 'table' then
-        patch.hair = app.hair.style and app.hair.style ~= 0 and { hash = app.hair.style } or 0
-        if app.sex == 'male' then
-            patch.beards_complete = app.hair.facial and app.hair.facial ~= 0 and { hash = app.hair.facial } or 0
-        end
-    end
-    if type(WCOverlays) == 'table' and type(WCOverlays.layers) == 'table' then
-        for _, layer in ipairs(WCOverlays.layers) do
-            if layer.section == 'eyebrows' or layer.section == 'makeup' then
-                local o = app.overlays and app.overlays[layer.id]
-                local id, grid, set
-                if o then id, grid, set = WCOverlays.texture(layer, o.style) end
-                if id ~= nil and layer.sexes[app.sex] then
-                    local entry = { id = id, opacity = o.opacity, palette = layer.palette, tint0 = o.color - 1 }
-                    if grid then entry.sheetGrid = grid end
-                    if set then entry.sexe = set end
-                    if o.color2 then entry.tint1 = o.color2 - 1 end
-                    if o.color3 then entry.tint2 = o.color3 - 1 end
-                    patch.overlays[layer.library] = entry
-                end
-            end
-        end
-    end
-    return patch
-end
-
-local function pushFrameworkBarber(src, app)
-    if GetResourceState('w_creators') == 'started' then return end
-    if Config.Standalone and Config.Standalone.syncToFramework == false then return end
-    if w and w.framework and type(w.framework.updateUserSkin) == 'function' then
-        pcall(function() w.framework:updateUserSkin(src, barberSkinPatch(app), false) end)
-    end
-end
-
---- Cache a player's appearance and send it to every client (delegates to w_creators or w_clothing when running).
+--- Cache a player's appearance and send it to every client.
+--  Note: Repo.save already persisted skin changes through w.framework:updateUserSkin (which on
+--  w_core + w_creators automatically triggers w_creators' render & OneSync broadcast).
 ---@return boolean sent
 function Sync.broadcast(src, app)
     src = playerId(src)
     if not src or type(app) ~= 'table' then return false end
     cache[src] = WCUtil.copy(app)
-    local active = WCSessions and WCSessions.activeCharacter and WCSessions.activeCharacter(src)
-    TriggerEvent('w_appearance:updated', src, active and active.charid or nil, app)
     if GetResourceState('w_creators') == 'started' then
-        local ok = pcall(function() exports.w_creators:SyncAppearanceFromExternal(src, app) end)
-        if ok then return true end
+        return true
     end
-    pushFrameworkBarber(src, app)
     if GetResourceState('w_clothing') == 'started' then
         local ok = pcall(function() exports.w_clothing:SyncAppearanceFromExternal(src, app) end)
         if ok then return true end

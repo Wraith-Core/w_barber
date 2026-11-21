@@ -33,20 +33,9 @@ Config.Clothing = {
     prices = {},
 }
 
--- Framework character tables (used in standalone mode when w_creators is not installed)
-Config.Characters = {
-    tables = {
-        vorp = 'characters',
-        rsg  = 'players',
-        qbr  = 'players',
-    },
-}
-
--- When running standalone without w_creators, sync saved hair/beard/makeup back to the
--- framework's native skin store (RSG / VORP / QBR) via w_lib's framework bridge.
+-- All character identity, money and skin go through w_lib (w.framework).
 Config.Standalone = {
-    syncToFramework = true,
-    restoreOnSpawn  = true,
+    restoreOnSpawn = true,
 }
 
 Config.Swatches = {
