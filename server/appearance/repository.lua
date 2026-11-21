@@ -79,7 +79,14 @@ local function decodeOverlay(layer, value)
     return out
 end
 
-local function fromFramework(src, skin, clothes)
+local function loadSavedStates(charid)
+    local ok, rows = pcall(w.database.query.await, 'SELECT `states` FROM `w_clothing_states` WHERE `charid` = ? LIMIT 1', { key(charid) })
+    if not ok or type(rows) ~= 'table' or type(rows[1]) ~= 'table' or type(rows[1].states) ~= 'string' then return {} end
+    local decoded = WCUtil.decode(rows[1].states)
+    return type(decoded) == 'table' and decoded or {}
+end
+
+local function fromFramework(src, charid, skin, clothes)
     local sex = 'male'
     if type(skin) == 'table' then
         if skin.sex == 2 or skin.sex == 'female' or skin.model == 'mp_female' then sex = 'female' end
@@ -179,9 +186,27 @@ local function fromFramework(src, skin, clothes)
             if type(category) == 'string' and WCCatalog.isClothing(category) then
                 local rawHash = type(entry) == 'table' and (entry.hash or entry.comp) or entry
                 local h = WCCatalog.resolve(sex, category, rawHash)
-                if h and h ~= 0 then app.clothing.equipped[category] = h end
+                if h and h ~= 0 then
+                    app.clothing.equipped[category] = h
+                    if type(entry) == 'table' and entry.palette then
+                        local tint = {
+                            palette = entry.palette,
+                            tint0 = tonumber(entry.tint0) or 0,
+                            tint1 = tonumber(entry.tint1) or 0,
+                            tint2 = tonumber(entry.tint2) or 0,
+                        }
+                        if WCCatalog.validTint(category, tint) then
+                            app.clothing.tints[category] = tint
+                        end
+                    end
+                end
             end
         end
+    end
+
+    local savedStates = loadSavedStates(charid)
+    if next(savedStates) ~= nil then
+        app.clothing.states = savedStates
     end
 
     return (AppearanceSchema.sanitize(app, PERSISTED)), nil
@@ -238,7 +263,12 @@ function Repo.load(charid, opts)
     if type(GetResourceState) == 'function' and GetResourceState('w_creators') == 'started' then
         local okCr, cr = pcall(function() return exports.w_creators:GetAppearance(src) end)
         if okCr and type(cr) == 'table' and type(cr.appearance) == 'table' then
-            local app = (AppearanceSchema.sanitize(WCUtil.copy(cr.appearance), PERSISTED))
+            local raw = WCUtil.copy(cr.appearance)
+            local savedStates = loadSavedStates(charid)
+            if type(raw.clothing) == 'table' and next(savedStates) ~= nil then
+                raw.clothing.states = savedStates
+            end
+            local app = (AppearanceSchema.sanitize(raw, PERSISTED))
             Repo.cache[key(charid)] = { app = WCUtil.copy(app) }
             return WCUtil.copy(app), { version = AppearanceSchema.VERSION, cached = false, defaultsUsed = {}, degraded = false }
         end
@@ -256,7 +286,7 @@ function Repo.load(charid, opts)
         end
     end
 
-    local app, err = fromFramework(src, skin, clothes)
+    local app, err = fromFramework(src, charid, skin, clothes)
     if not app then return nil, { error = err or 'INTERNAL_ERROR' } end
 
     Repo.cache[key(charid)] = { app = WCUtil.copy(app) }

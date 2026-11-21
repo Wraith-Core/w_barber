@@ -78,9 +78,14 @@ local function sitDown(ped, x, y, z, h)
     FreezeEntityPosition(ped, false)
     for _, name in ipairs(scenarios) do
         TaskStartScenarioAtPosition(ped, joaat(name), x, y, z, h, -1, false, true)
-        local deadline = GetGameTimer() + (tonumber(CHAIR.verifyMs) or 600)
+        Wait(50)
+        local deadline = GetGameTimer() + (tonumber(CHAIR.verifyMs) or 1200)
         while GetGameTimer() < deadline do
-            if IsPedUsingAnyScenario(ped) then return true end
+            local using = IsPedUsingAnyScenario(ped)
+            if using == true or using == 1 then
+                Wait(250)
+                return true
+            end
             Wait(0)
         end
         ClearPedTasksImmediately(ped)
@@ -215,11 +220,40 @@ local function contextOf(data, loc)
     }
 end
 
+local CHAIR_MODELS = ((Config.Board or {}).chairModels) or { 'p_barberchair01x', 'p_barberchair02x', 'p_barberchair03x' }
+
+--- Automatically detect a world barber chair prop near the barber location when loc.chair is not set.
+local function findNearbyChair(loc)
+    local cx, cy, cz = CreatorScene.coords(loc and loc.coords or nil)
+    if not cx then
+        local ped = PlayerPedId()
+        if pedExists(ped) then
+            local p = GetEntityCoords(ped)
+            cx, cy, cz = p.x, p.y, p.z
+        end
+    end
+    if not cx then return nil end
+    for _, radius in ipairs({ 2.5, 5.0 }) do
+        for _, model in ipairs(CHAIR_MODELS) do
+            local found = GetClosestObjectOfType(cx, cy, cz, radius, joaat(model), false, false, false)
+            if found and found ~= 0 and DoesEntityExist(found) then
+                local at = GetEntityCoords(found)
+                return {
+                    kind = 'world',
+                    model = model,
+                    coords = vector4(at.x, at.y, at.z, GetEntityHeading(found)),
+                }
+            end
+        end
+    end
+    return nil
+end
+
 --- The editor options of a barber visit (runs in the flow's thread after the preview environment
 --  is entered and before the editor opens): the seat first, when the location has one - its chair
---  (the services board) before its preview spot.
+--  (the services board or nearby map chair) before its preview spot.
 local function options(flow, data, loc)
-    local chair = loc and type(loc.chair) == 'table' and loc.chair or nil
+    local chair = loc and type(loc.chair) == 'table' and loc.chair or findNearbyChair(loc)
     if chair or (loc and loc.preview ~= nil and loc.preview ~= false) then Seat.take(flow, loc.preview, chair) end
     return {
         title = loc and loc.label or DEFAULT_TITLE,
