@@ -476,7 +476,9 @@ local function openPrompts(s)
     local ok, group = pcall(w.prompt.createGroup, L(s.opts.title or TITLES[s.mode]), promptPosition())
     if not ok or type(group) ~= 'table' then return end
     pcall(function()
-        group.addPrompt('MOUSEDRAG', L(PROMPT_ROTATE), false)
+        if s.mode ~= 'barber' then
+            group.addPrompt('MOUSEDRAG', L(PROMPT_ROTATE), false)
+        end
         group.addPrompt('ESCAPE', L(PROMPT_BACK), false)
         group.display()
     end)
@@ -524,11 +526,31 @@ local function prepareSession(ped, mode, app, opts)
     s.ownsLock = lockEditor()
     if type(WCPanel) == 'table' and WCPanel.isOpen() then try(WCPanel.close) end
     if opts.render then
-        local called, done, err = try(Appearance and Appearance.RestoreCharacter, ped, s.working)
+        local called, done, err = try(Appearance and Appearance.RestoreCharacter, ped, view(s, s.working))
         if not called or not done then
             WCDebug.log('editor', 'initial render failed: %s', tostring(err))
             unlockEditor(s)
             return nil, 'INVALID_COMPONENT'
+        end
+    elseif mode == 'barber' and type(Appearance) == 'table' then
+        local eq = type(s.working.clothing) == 'table' and s.working.clothing.equipped or nil
+        local removedAny = false
+        if type(eq) == 'table' then
+            if eq.hats and eq.hats ~= 0 then
+                pcall(Appearance.RemoveCategory, ped, 'hats')
+                removedAny = true
+            end
+            if eq.masks and eq.masks ~= 0 then
+                pcall(Appearance.RemoveCategory, ped, 'masks')
+                removedAny = true
+            end
+        end
+        if removedAny then
+            local hStyle = type(s.working.hair) == 'table' and tonumber(s.working.hair.style) or 0
+            if hStyle and hStyle ~= 0 then
+                pcall(Appearance.ApplyComponent, ped, 'hair', hStyle)
+            end
+            pcall(Appearance.Refresh, ped)
         end
     end
     local built, payload = pcall(E.payload, s)
@@ -870,11 +892,22 @@ end
 --  clothes" toggle) the clothing, the hair and the beard are left off. Only the view changes:
 --  `working` keeps every piece, so turning the toggle off (or saving) puts them all back.
 local function view(s, app)
-    if not s.hidden or type(app) ~= 'table' then return app end
-    local out = WCUtil.copy(app)
-    out.clothing = { equipped = {}, tints = {}, states = {} }
-    out.hair = { style = 0, facial = 0 }
-    return out
+    if type(app) ~= 'table' then return app end
+    if s.hidden then
+        local out = WCUtil.copy(app)
+        out.clothing = { equipped = {}, tints = {}, states = {} }
+        out.hair = { style = 0, facial = 0 }
+        return out
+    end
+    if s.mode == 'barber' and not s.closing then
+        local out = WCUtil.copy(app)
+        out.clothing = type(out.clothing) == 'table' and out.clothing or {}
+        out.clothing.states = type(out.clothing.states) == 'table' and out.clothing.states or {}
+        out.clothing.states.hat = 'off'
+        out.clothing.states.mask = 'off'
+        return out
+    end
+    return app
 end
 E.view = view
 
@@ -1156,7 +1189,9 @@ OPS.save = function(s, data)
     end
     -- the clothes go back on before the look is committed: what is saved is what the ped shows
     if s.hidden then setHidden(s, false) end
+    s.closing = true
     local ok, result = pcall(s.opts.onCommit, WCUtil.copy(s.working), extra)
+    if not ok or not WCResult.is(result) or not result.ok then s.closing = nil end
     if not ok then
         WCDebug.warn('editor', 'commit failed: %s', tostring(result))
         return WCResult.fail('INTERNAL_ERROR')
@@ -1230,6 +1265,7 @@ OPS.cancel = function(s, data)
         draft = { working = WCUtil.copy(s.working), identity = identityDraft(s, data and data.identity) }
     else
         s.hidden = false
+        s.closing = true
         restoreOnPed(s, s.saved)
     end
     closeSession(s)
@@ -1314,6 +1350,9 @@ end
 function E.cameraAction(data)
     local s = current
     if type(data) ~= 'table' or not s or (data.id ~= nil and data.id ~= s.id) or s.busy then return { ok = false } end
+    if s.mode == 'barber' then
+        return { ok = true, camera = s.camera }
+    end
     if data.hide ~= nil then
         -- the "hide clothes" toggle: a view of the working look, never a change of it
         if s.mode ~= 'creator' or type(data.hide) ~= 'boolean' then return { ok = false } end

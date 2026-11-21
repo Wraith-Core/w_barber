@@ -5,7 +5,7 @@ lua54 'yes'
 name 'w_barber'
 author 'Wraith Studio'
 description 'Standalone barber shops (hair, beards, eyebrows, makeup, barber chairs and grooming). Compatible with w_core, VORP, RSG and QBR.'
-version '1.0.3'
+version '1.0.4'
 
 shared_scripts {
     '@w_lib/init.lua',

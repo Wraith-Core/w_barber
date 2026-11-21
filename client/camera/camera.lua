@@ -27,11 +27,11 @@ Cam.PRESETS = {
     --    so the head sits in the middle of the frame. It used to be added on top of the head height
     --    (0.10 - 0.18), which aimed the camera 10-18 cm ABOVE the skull — the head then rendered low
     --    in the frame with empty room over it, which is what the face editor looked like.
-    head        = { distance = 1.20, side = 0.18, bone = true, offset = 0.00, fov = 34.0 },
-    face        = { distance = 0.90, side = 0.12, bone = true, offset = -0.02, fov = 30.0 },
+    head        = { distance = 0.85, side = 0.12, bone = true, offset = 0.02, fov = 30.0 },
+    face        = { distance = 0.85, side = 0.12, bone = true, offset = 0.02, fov = 30.0 },
     eyes        = { distance = 0.65, side = 0.07, bone = true, offset = 0.01, fov = 28.0 },
-    hair        = { distance = 1.05, side = 0.15, bone = true, offset = 0.06, fov = 32.0 },
-    facialHair  = { distance = 0.85, side = 0.10, bone = true, offset = -0.06, fov = 30.0 },
+    hair        = { distance = 0.85, side = 0.12, bone = true, offset = 0.02, fov = 30.0 },
+    facialHair  = { distance = 0.85, side = 0.12, bone = true, offset = 0.02, fov = 30.0 },
     -- the teeth are a component you cannot judge from the 'face' framing: this sits on the mouth
     teeth       = { distance = 0.55, side = 0.04, bone = true, offset = -0.085, fov = 26.0 },
     hands       = { distance = 1.60, side = 0.30, height = -0.10, fov = 36.0 },
@@ -354,6 +354,7 @@ local function frame(presetName)
         d = Cam.PRESETS.hands
     end
     local at = GetEntityCoords(ped)
+    local ox, oy = at.x, at.y
     local height = d.height or 0.0
     if d.bone then
         -- ⚠️ The old clamp was clamp(rise, 0.25, 1.2). Whether GetEntityCoords answers the feet or the
@@ -363,7 +364,11 @@ local function frame(presetName)
         --    skeleton has not rendered yet (GetPedBoneCoords then answers at the entity origin).
         local head = GetPedBoneCoords(ped, 21030, 0.0, 0.0, 0.0)
         local rise = head and (head.z - at.z) or 0.0
-        if rise < 0.15 or rise > 2.20 then rise = Cam.HEAD_RISE_FALLBACK end
+        if rise >= 0.15 and rise <= 2.20 then
+            ox, oy = head.x, head.y
+        else
+            rise = Cam.HEAD_RISE_FALLBACK
+        end
         height = rise + (d.offset or 0.0)
     end
     local mirror = mirrorSign()
@@ -374,13 +379,13 @@ local function frame(presetName)
     local angle = math.rad(st.heading)
     local rightX, rightY = math.cos(angle), math.sin(angle)
     local frontX, frontY = -math.sin(angle), math.cos(angle)
-    local tx, ty, tz = at.x + rightX * side, at.y + rightY * side, at.z + height + st.height
+    local tx, ty, tz = ox + rightX * side, oy + rightY * side, at.z + height + st.height
     -- the lens rides slightly above the target on the wide shots (it reads as a portrait), but on a
     -- head-bone framing that tilt alone pushed the face down again — aim level there. A preset
     -- can set its own rise (the store framings look down on the pants and the boots).
     local rise = d.rise or (d.bone and 0.0 or 0.08)
-    local cx = at.x + rightX * camSide + frontX * d.distance
-    local cy = at.y + rightY * camSide + frontY * d.distance
+    local cx = ox + rightX * camSide + frontX * d.distance
+    local cy = oy + rightY * camSide + frontY * d.distance
     local cz = tz + rise
     if st.set == 'shop' then
         -- the unmirrored framing, when the mirror moved this one

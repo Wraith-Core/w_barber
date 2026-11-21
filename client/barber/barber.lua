@@ -83,7 +83,7 @@ local function sitDown(ped, x, y, z, h)
         while GetGameTimer() < deadline do
             local using = IsPedUsingAnyScenario(ped)
             if using == true or using == 1 then
-                Wait(250)
+                Wait(450)
                 return true
             end
             Wait(0)
@@ -150,12 +150,16 @@ function Seat.take(flow, preview, chair)
                      chair = onChair == true }
     seated = record
     StartFade(Seat.FADE_MS)
+    flow.faded = true
     ped = PlayerPedId()
     place(ped, { x, y, z, h })
     waitCollision(ped, x, y, z)
     if record.chair and seated == record and not flow.finished then sitDown(ped, x, y, z, h) end
+    if type(WCCamera) == 'table' then
+        if type(WCCamera.anchor) == 'function' then pcall(WCCamera.anchor, ped, { heading = h }) end
+        if type(WCCamera.glide) == 'function' then pcall(WCCamera.glide, 0) end
+    end
     record.faded = false
-    EndFade(Seat.FADE_MS)
     CreateThread(function()
         while seated == record and not flow.finished do Wait(Seat.WATCH_MS) end
         stand(record)
@@ -261,7 +265,7 @@ local function options(flow, data, loc)
         -- the server's set of allowed sections, unchanged (hair, facialHair, eyebrows/makeup)
         sections = data.sections,
         context = contextOf(data, loc),
-        camera = loc and loc.camera or 'hair',
+        camera = 'face',
     }
 end
 
