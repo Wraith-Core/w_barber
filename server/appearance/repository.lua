@@ -212,6 +212,8 @@ local function fromFramework(src, charid, skin, clothes)
     return (AppearanceSchema.sanitize(app, PERSISTED)), nil
 end
 
+local BARBER_OVERLAY_SECTIONS = { hair = true, facialHair = true, eyebrows = true, makeup = true }
+
 function Repo.barberSkinPatch(app)
     local patch = { overlays = {} }
     if type(app.hair) == 'table' then
@@ -222,7 +224,7 @@ function Repo.barberSkinPatch(app)
     end
     if type(WCOverlays) == 'table' and type(WCOverlays.layers) == 'table' then
         for _, layer in ipairs(WCOverlays.layers) do
-            if (layer.section == 'eyebrows' or layer.section == 'makeup') and layer.sexes[app.sex] then
+            if BARBER_OVERLAY_SECTIONS[layer.section] and layer.sexes[app.sex] then
                 local o = app.overlays and app.overlays[layer.id]
                 local id, grid, set
                 if o then id, grid, set = WCOverlays.texture(layer, o.style) end
@@ -306,19 +308,46 @@ function Repo.save(charid, app, _, opts)
     Repo.invalidate(charid)
 
     local patch = Repo.barberSkinPatch(app)
-    if w and w.framework and type(w.framework.updateUserSkin) == 'function' then
+    local hasCreators = type(GetResourceState) == 'function' and GetResourceState('w_creators') == 'started'
+    local hasWCore = type(GetResourceState) == 'function' and GetResourceState('w_core') == 'started'
+
+    if hasCreators and not hasWCore then
+        -- On RSG / VORP / QBR with w_creators, SetSkin persists to characters_appearence AND syncs
+        -- the full framework skin (playerskins / characters) cleanly without partial-patch revert bugs.
+        local okCr, res = pcall(function()
+            return exports.w_creators:SetSkin(src, WCUtil.copy(patch), false)
+        end)
+        if not okCr or type(res) ~= 'table' or res.ok ~= true then
+            WCDebug.warn('appearance', 'w_creators:SetSkin failed for %s: %s', tostring(src),
+                tostring(okCr and (type(res) == 'table' and res.code or res) or res))
+            return false, 'DATABASE_ERROR'
+        end
+    elseif w and w.framework and type(w.framework.updateUserSkin) == 'function' then
+        local fwPatch = WCUtil.copy(patch)
+        if not hasWCore then
+            -- w_lib rsg-core_v2 revertSkinInternal requires model, headIndex and expressions table.
+            fwPatch.model = app.sex == 'female' and 'mp_female' or 'mp_male'
+            fwPatch.expressions = {}
+            local okS, baseSkin = pcall(function() return w.framework:getUserSkin(src) end)
+            if okS and type(baseSkin) == 'table' then
+                for _, k in ipairs({ 'headIndex', 'skinTone', 'bodiesIndex', 'eyesIndex', 'teethIndex' }) do
+                    if baseSkin[k] ~= nil then fwPatch[k] = baseSkin[k] end
+                end
+            end
+            if fwPatch.headIndex == nil then fwPatch.headIndex = 1 end
+            if type(fwPatch.overlays) == 'table' then
+                for k, v in pairs(fwPatch.overlays) do
+                    if v == false then fwPatch.overlays[k] = nil end
+                end
+            end
+        end
         local okFw, fwErr = pcall(function()
-            w.framework:updateUserSkin(src, WCUtil.copy(patch), false)
+            w.framework:updateUserSkin(src, fwPatch, false)
         end)
         if not okFw then
             WCDebug.warn('appearance', 'w.framework:updateUserSkin failed for %s: %s', tostring(src), tostring(fwErr))
             return false, 'DATABASE_ERROR'
         end
-    end
-    if type(GetResourceState) == 'function' and GetResourceState('w_creators') == 'started' and GetResourceState('w_core') ~= 'started' then
-        pcall(function()
-            exports.w_creators:SetSkin(src, WCUtil.copy(patch), false)
-        end)
     end
 
     Repo.cache[key(charid)] = { app = WCUtil.copy(app) }
